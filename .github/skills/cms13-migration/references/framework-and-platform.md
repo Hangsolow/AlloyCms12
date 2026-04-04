@@ -61,12 +61,14 @@ services.AddCmsCore();
 
 Affected methods: `AddCmsCore()`, `AddCmsData()`, `AddCmsFramework()`, `AddTinyMce()`, `AddAdmin()`, `AddCmsUI()`, `AddCmsShell()`, `AddCmsShellUI()`, `AddCmsBlobs()`, `AddCmsCache()`, `AddCmsGeolocation()`, `AddCmsChangeNotification()`, `AddCmsLinkAnalyzer()`.
 
+Bear in mind that `ApplicationUser` is still in the `EPiServer.Cms.UI.AspNetIdentity` namespace so that must not be removed if `ApplicationUser` is used by `AddCmsAspNetIdentity()`
+
 ### Removed service locator types
 
 The following obsolete types are removed — replace with constructor injection:
 
 - `IInterceptorRegister`, `IRegisteredService`, `IServiceConfigurationProvider`
-- `IServiceLocator`, `ServiceDesriptor`, `ServiceLocationHelper`
+- `IServiceLocator`, `ServiceDescriptor`, `ServiceLocationHelper`
 - `ServiceLocatorExtensions`, `ServiceLocatorImplBase`
 - `AutoDiscovery.IServiceLocatorFactory`, `ServiceLocatorFactoryAttribute`
 - `IServiceCollection` extension methods that duplicate `Microsoft.Extensions.DependencyInjection` methods

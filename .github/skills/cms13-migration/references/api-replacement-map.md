@@ -55,6 +55,9 @@ Quick-reference tables for migrating types, methods, events, namespaces, and pac
 | `ConstructorParameterResolver.Instance` | Inject from service container | Use service container |
 | `PropertyData.Locate` | Inject services via constructor | — |
 | `Html.CreatePlatformNavigationMenu()` | `<platform-navigation />` | Tag helper |
+| `PageController<T>.PageContext.Page` | `IContentRouteHelper.Content` | Inject `IContentRouteHelper` |
+| `IPageRouteHelper.Page` | `IContentRouteHelper.Content` | Inject `IContentRouteHelper` |
+| `IPageRouteHelper.PageLink` | `IContentRouteHelper.ContentLink` | Inject `IContentRouteHelper` |
 
 ---
 
