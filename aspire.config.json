@@ -1,0 +1,5 @@
+{
+  "appHost": {
+    "path": "src/AlloyCms12.AppHost/AlloyCms12.AppHost.csproj"
+  }
+}
