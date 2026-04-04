@@ -1,6 +1,7 @@
 ---
 name: cms13-migration
-description: "Guides migration from Optimizely CMS 12 to CMS 13, covering all breaking changes, API replacements, and code update patterns. USE FOR: upgrading from CMS 12 to CMS 13, fixing compile errors after CMS upgrade, understanding CMS 13 breaking changes, replacing removed APIs (SiteDefinition, IApplicationResolver, EPiServer.Applications namespace, PageReference, DynamicProperty, ContentArea.FilteredItems, XhtmlString.ToHtmlString, IContentRouteEvents, PlugInAttribute, IServiceLocator), migrating Newtonsoft.Json to System.Text.Json in CMS context, updating NuGet packages for CMS 13. DO NOT USE FOR: CMS 11 migrations, Optimizely Commerce upgrades, non-Optimizely .NET projects."
+description: "Use this skill when upgrading an Optimizely CMS 12 project to CMS 13, fixing compile errors after a CMS upgrade, or replacing any removed CMS 12 APIs. USE FOR: upgrading from CMS 12 to CMS 13, fixing compile errors after CMS upgrade, understanding CMS 13 breaking changes, replacing removed APIs (SiteDefinition, IApplicationResolver, EPiServer.Applications namespace, PageReference, DynamicProperty, ContentArea.FilteredItems, XhtmlString.ToHtmlString, IContentRouteEvents, PlugInAttribute, IServiceLocator, ServiceLocator.GetInstance), migrating Newtonsoft.Json to System.Text.Json in CMS context, updating NuGet packages for CMS 13. DO NOT USE FOR: CMS 11 migrations, Optimizely Commerce upgrades, non-Optimizely .NET projects."
+compatibility: "Optimizely CMS 12 projects (.NET 8). Requires NuGet source https://api.nuget.optimizely.com/v3/index.json."
 ---
 
 # Optimizely CMS 12 → CMS 13 Migration
@@ -16,6 +17,7 @@ These are silent failures that won't produce obvious errors at the right moment 
 - **`IApplicationResolver` and `IRoutableApplication` live in `EPiServer.Applications`, not `EPiServer.Web`.** Every C# file using these types needs `using EPiServer.Applications;`. In Razor views, add both `@using EPiServer.Applications` and the fully-qualified inject directive (see Step 5). Missing this namespace causes a flood of "type or namespace not found" errors after migrating `SiteDefinition.Current`.
 - **`ContentArea.FilteredItems` is obsolete but still compiles.** It won't respect rendering filters in CMS 13. Use `ContentArea.Items` or the filter will be ignored with no error.
 - **`context.Locate.Advanced` inside `IConfigurableModule.Initialize()` fails.** `InitializationEngine.Locate` returns `IServiceLocator`, which is removed. Any call like `context.Locate.Advanced.GetInstance<T>()` will not compile. Replace with `context.Services.GetInstance<T>()`.
+- **`ServiceLocator.Current.GetInstance<T>()` no longer compiles anywhere.** The `GetInstance<T>()` extension came from `ServiceLocatorExtensions`, which is removed. `ServiceLocator.Current` itself still works in CMS 13 (now returns `IServiceProvider`), but you must switch to `.GetRequiredService<T>()` (from `Microsoft.Extensions.DependencyInjection`). The fix varies by context — see Step 4.
 - **The DI namespace change is a silent build failure.** If you have `using Microsoft.Extensions.DependencyInjection;` and call `AddCmsCore()`, the old extension method is gone — you get a confusing "no overload" error. Change to `using EPiServer.DependencyInjection;`.
 
 ## Migration workflow
@@ -79,11 +81,29 @@ Affected: `AddCmsCore()`, `AddCmsData()`, `AddCmsFramework()`, `AddTinyMce()`, `
 
 ### Step 4 — Remove service locator usages
 
-Replace constructor injection of removed types (`IServiceLocator`, `ServiceLocationHelper`, etc.) with standard constructor injection from `Microsoft.Extensions.DependencyInjection`. See [`references/framework-and-platform.md`](references/framework-and-platform.md#removed-service-locator-types).
+Replace constructor injection of removed types (`IServiceLocator`, `ServiceLocationHelper`, etc.) with standard constructor injection from `Microsoft.Extensions.DependencyInjection`. See [`references/framework-and-platform.md`](references/framework-and-platform.md).
+
+The `GetInstance<T>()` extension method is removed (it came from `ServiceLocatorExtensions`). `ServiceLocator.Current` still exists in CMS 13 and now returns `IServiceProvider`. The replacement depends on the context:
+
+#### Constructor-injectable classes
+
+Use constructor injection — the preferred pattern for any class resolved from DI:
+
+```csharp
+// Before
+public class MyService
+{
+    public MyService() { _repo = ServiceLocator.Current.GetInstance<IContentRepository>(); }
+}
+
+// After
+public class MyService
+{
+    public MyService(IContentRepository repo) { _repo = repo; }
+}
+```
 
 #### `IConfigurableModule.Initialize` — `context.Locate.Advanced`
-
-Inside `Initialize()` / `Uninitialize()` the old pattern accessed services via the engine context:
 
 ```csharp
 // Before — context.Locate returns IServiceLocator (removed)
@@ -112,6 +132,32 @@ public class MyPageBase : RazorPage<TModel>
     protected void UseService()
         => Context.RequestServices.GetRequiredService<MyService>().DoSomething();
 }
+```
+
+#### Static extension methods with `IHtmlHelper`
+
+Static helpers that receive `IHtmlHelper` have access to `HttpContext` via the helper — use it instead of `ServiceLocator`:
+
+```csharp
+// Before
+var contentLoader = ServiceLocator.Current.GetInstance<IContentLoader>();
+
+// After
+var contentLoader = helper.ViewContext.HttpContext.RequestServices.GetRequiredService<IContentLoader>();
+// Also add: using Microsoft.Extensions.DependencyInjection;
+```
+
+#### `ContentData` overrides (e.g. `SetDefaultValues`)
+
+`ContentData` subclasses (page types, block types) are not resolved from DI — constructor injection isn't available. Use `ServiceLocator.Current.GetRequiredService<T>()` with `using Microsoft.Extensions.DependencyInjection`:
+
+```csharp
+// Before
+NewsList.Heading = ServiceLocator.Current.GetInstance<LocalizationService>().GetString("/key");
+
+// After
+using Microsoft.Extensions.DependencyInjection;
+NewsList.Heading = ServiceLocator.Current.GetRequiredService<LocalizationService>().GetString("/key");
 ```
 
 ---
@@ -180,6 +226,24 @@ ContentReference pageRef = page.ContentLink;
 
 Check `PageData` properties (`ContentLink`, `ParentLink`, `ArchiveLink`) — they now return `ContentReference`.
 
+Also replace **instance usages** of `page.PageLink` — the property is obsolete and will produce warnings:
+
+```csharp
+// Before — in C# code
+new SelectItem { Value = page.PageLink }
+
+// After
+new SelectItem { Value = page.ContentLink }
+```
+
+```cshtml
+{{!-- Before — in .cshtml views --}}
+<a href="@Url.ContentUrl(item.Page.PageLink)">
+
+{{!-- After --}}
+<a href="@Url.ContentUrl(item.Page.ContentLink)">
+```
+
 ---
 
 ### Step 7 — Fix content type / tab naming
@@ -196,7 +260,7 @@ public const string MetaData = "Meta Data";  // space — invalid
 public const string MetaData = "MetaData";   // no space
 ```
 
-See [`references/content-types-and-properties.md`](references/content-types-and-properties.md#content-type--property-naming-validation).
+See [`references/content-types-and-properties.md`](references/content-types-and-properties.md).
 
 ---
 
@@ -204,7 +268,7 @@ See [`references/content-types-and-properties.md`](references/content-types-and-
 
 Delete all usages of `DynamicProperty`, `DynamicPropertyCollection`, `DynamicPropertyBag`, and related types. No replacement exists — migrate data to regular content properties.
 
-Read [`references/content-types-and-properties.md`](references/content-types-and-properties.md#dynamic-properties-removed-entirely) if you need the complete list of removed types.
+Read [`references/content-types-and-properties.md`](references/content-types-and-properties.md) if you need the complete list of removed types.
 
 ---
 
@@ -345,5 +409,6 @@ build the solution and look for warnings about obsolete APIs. Many of these have
 | `IValidate<T>` not picked up | `services.AddCmsValidator<T>()` |
 | `context.Locate` / `context.Locate.Advanced.GetInstance<T>()` fails | `IServiceLocator` is removed; replace with `context.Services.GetInstance<T>()` |
 | `'IContentRouteHelper' does not contain 'Page'` | Use `PageContext.Content` — in CMS 13, `PageContext` exposes `.Content` instead of `.Page`; no need to inject `IContentRouteHelper` separately in controller base classes |
+| `'PageData.PageLink' is obsolete` warning | Replace with `page.ContentLink` throughout code and views |
 
 If an API isn't covered above, consult [`references/api-replacement-map.md`](references/api-replacement-map.md) for the complete CMS 12 → 13 type, method, event, and namespace mapping.
