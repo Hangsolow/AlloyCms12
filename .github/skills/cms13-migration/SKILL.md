@@ -90,10 +90,8 @@ Inside `Initialize()` / `Uninitialize()` the old pattern accessed services via t
 var events = context.Locate.Advanced.GetInstance<ITemplateResolverEvents>();
 
 // After — static shim is still available in CMS 13
-var events = ServiceLocator.Current.GetInstance<ITemplateResolverEvents>();
+var events = context.Services.GetInstance<ITemplateResolverEvents>();
 ```
-
-Also remove any `[ModuleDependency(typeof(InitializationModule))]` on these classes — `InitializationModule` no longer exists.
 
 #### Razor page base classes
 
@@ -321,11 +319,18 @@ If your project (or removed packages like `Episerver.Find`) used Newtonsoft.Json
 
 ---
 
+### Step 18 — Look at build warnings fix obsolete API usages
+
+build the solution and look for warnings about obsolete APIs. Many of these have direct replacements that need to be updated in code. consult the complete CMS 12 → 13 mapping in [`references/api-replacement-map.md`](references/api-replacement-map.md) for the full list of API replacements.
+
+---
+
 ## Common compile-error patterns after upgrade
 
 | Error | Fix |
 |---|---|
 | `IServiceLocator` not found | Replace with constructor injection |
+| `ITemplateResolverEvents` not found | add `using EPiServer.Web`  |
 | `SiteDefinition.Current` | Inject `IApplicationResolver` (`using EPiServer.Applications`) |
 | `IApplicationResolver` / `IRoutableApplication` not found | Add `using EPiServer.Applications;` (or `@using EPiServer.Applications` in Razor views) |
 | `PageReference` ambiguous/obsolete | Replace with `ContentReference` |
@@ -338,7 +343,7 @@ If your project (or removed packages like `Episerver.Find`) used Newtonsoft.Json
 | `AddCmsCore()` namespace error | `using EPiServer.DependencyInjection;` |
 | `AddCmsAspNetIdentity()` not found | `using EPiServer.DependencyInjection;` (same namespace — add even if `AddCmsCore` already works) |
 | `IValidate<T>` not picked up | `services.AddCmsValidator<T>()` |
-| `context.Locate` / `context.Locate.Advanced.GetInstance<T>()` fails | `IServiceLocator` is removed; replace with `ServiceLocator.Current.GetInstance<T>()` |
+| `context.Locate` / `context.Locate.Advanced.GetInstance<T>()` fails | `IServiceLocator` is removed; replace with `context.Services.GetInstance<T>()` |
 | `'IContentRouteHelper' does not contain 'Page'` | Use `PageContext.Content` — in CMS 13, `PageContext` exposes `.Content` instead of `.Page`; no need to inject `IContentRouteHelper` separately in controller base classes |
 
 If an API isn't covered above, consult [`references/api-replacement-map.md`](references/api-replacement-map.md) for the complete CMS 12 → 13 type, method, event, and namespace mapping.
