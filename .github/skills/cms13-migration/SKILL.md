@@ -103,7 +103,17 @@ See [`references/sites-and-routing.md`](references/sites-and-routing.md) for the
 ### Step 6 — Replace `PageReference` with `ContentReference`
 
 `PageReference` is obsolete. Global find-and-replace in most cases:
+On pages and blocks, replace `PageReference` → `ContentReference`. Check properties with `[AllowedTypes]` — if they only allow page types, add `[AllowedTypes(typeof(PageData))]` to preserve validation.
+```csharp
+// Before
+public virtual PageReference ContactPageLink { get; set; }
 
+// After
+[AllowedTypes(typeof(PageData))]
+public virtual ContentReference ContactPageLink { get; set; }
+```
+
+everywhere else, replace `PageReference` → `ContentReference` without adding `[AllowedTypes]`.
 ```csharp
 // Before
 PageReference pageRef = page.ContentLink as PageReference;
@@ -171,6 +181,13 @@ private readonly IContentTypeRepository<PageType> _repo;
 private readonly IContentTypeRepository _repo;
 ```
 
+For generic usages of `IContentTypeRepository<T>`, remove the generic type parameter and cast the result of `Load()` to the expected type.
+remember that the ContentType from `Load()` can be null if the type isn't found and the cast will also return null if the type does not match, so consider making the method return type nullable and adding null checks where appropriate.  
+
+```csharp
+// New way
+var contentPageType = contentTypeRepository.Load(pageType) as PageType;
+```
 ---
 
 ### Step 11 — Fix `PropertyString` / `PropertyLongString` accessors
