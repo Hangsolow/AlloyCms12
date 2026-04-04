@@ -55,7 +55,7 @@ Quick-reference tables for migrating types, methods, events, namespaces, and pac
 | `ConstructorParameterResolver.Instance` | Inject from service container | Use service container |
 | `PropertyData.Locate` | Inject services via constructor | — |
 | `Html.CreatePlatformNavigationMenu()` | `<platform-navigation />` | Tag helper |
-| `PageController<T>.PageContext.Page` | `IContentRouteHelper.Content` | Inject `IContentRouteHelper` |
+| `PageController<T>.PageContext.Page` | `PageContext.Content` | In CMS 13, `PageContext` exposes `.Content` directly — no extra injection needed in controller base classes. Only inject `IContentRouteHelper` if accessing content outside a `PageController<T>` subclass. |
 | `IPageRouteHelper.Page` | `IContentRouteHelper.Content` | Inject `IContentRouteHelper` |
 | `IPageRouteHelper.PageLink` | `IContentRouteHelper.ContentLink` | Inject `IContentRouteHelper` |
 

@@ -1,6 +1,6 @@
 ---
 name: cms13-migration
-description: "Guides migration from Optimizely CMS 12 to CMS 13, covering all breaking changes, API replacements, and code update patterns. USE FOR: upgrading from CMS 12 to CMS 13, fixing compile errors after CMS upgrade, understanding CMS 13 breaking changes, replacing removed APIs (SiteDefinition, PageReference, DynamicProperty, ContentArea.FilteredItems, XhtmlString.ToHtmlString, IContentRouteEvents, PlugInAttribute, IServiceLocator), migrating Newtonsoft.Json to System.Text.Json in CMS context, updating NuGet packages for CMS 13. DO NOT USE FOR: CMS 11 migrations, Optimizely Commerce upgrades, non-Optimizely .NET projects."
+description: "Guides migration from Optimizely CMS 12 to CMS 13, covering all breaking changes, API replacements, and code update patterns. USE FOR: upgrading from CMS 12 to CMS 13, fixing compile errors after CMS upgrade, understanding CMS 13 breaking changes, replacing removed APIs (SiteDefinition, IApplicationResolver, EPiServer.Applications namespace, PageReference, DynamicProperty, ContentArea.FilteredItems, XhtmlString.ToHtmlString, IContentRouteEvents, PlugInAttribute, IServiceLocator), migrating Newtonsoft.Json to System.Text.Json in CMS context, updating NuGet packages for CMS 13. DO NOT USE FOR: CMS 11 migrations, Optimizely Commerce upgrades, non-Optimizely .NET projects."
 ---
 
 # Optimizely CMS 12 → CMS 13 Migration
@@ -13,6 +13,7 @@ These are silent failures that won't produce obvious errors at the right moment 
 - **Tab/group names with spaces compile fine but break the DB.** The database auto-migrates invalid names on upgrade (e.g., `"Meta Data"` → `"MetaData"` with prefix `G_`), but your code constants still hold the old value. You'll get a mismatch silently — the group tab won't render the property.
 - **`ScriptParserOptions` defaults changed.** `SavingMode` is now `ThrowException` — content that previously saved with inline scripts or unsafe HTML now throws `InvalidPropertyValueException`. Test content editing flows after upgrade.
 - **`SiteDefinition.Current.StartPage` doesn't throw — it returns an empty reference.** Code that checks `!ContentReference.IsNullOrEmpty(...)` on it may silently fall through with no site settings loaded.
+- **`IApplicationResolver` and `IRoutableApplication` live in `EPiServer.Applications`, not `EPiServer.Web`.** Every C# file using these types needs `using EPiServer.Applications;`. In Razor views, add both `@using EPiServer.Applications` and the fully-qualified inject directive (see Step 5). Missing this namespace causes a flood of "type or namespace not found" errors after migrating `SiteDefinition.Current`.
 - **`ContentArea.FilteredItems` is obsolete but still compiles.** It won't respect rendering filters in CMS 13. Use `ContentArea.Items` or the filter will be ignored with no error.
 - **The DI namespace change is a silent build failure.** If you have `using Microsoft.Extensions.DependencyInjection;` and call `AddCmsCore()`, the old extension method is gone — you get a confusing "no overload" error. Change to `using EPiServer.DependencyInjection;`.
 
@@ -88,13 +89,34 @@ Replace constructor injection of removed types (`IServiceLocator`, `ServiceLocat
 private readonly ISiteDefinitionResolver _siteResolver;
 var startPage = SiteDefinition.Current.StartPage;
 
-// After
+// After — IApplicationResolver and IRoutableApplication are in EPiServer.Applications
+using EPiServer.Applications;
+
 private readonly IApplicationResolver _appResolver;
 var startPage = (_appResolver.GetByContext() as IRoutableApplication)?.EntryPoint
     ?? ContentReference.RootPage;
 ```
 
 Replace `ISiteDefinitionResolver` → `IApplicationResolver`, `ISiteDefinitionRepository` → `IApplicationRepository`.
+
+#### Razor views
+
+When `SiteDefinition.Current.StartPage` appears in `.cshtml` files, replace it with `@inject` and a local variable:
+
+```cshtml
+@using EPiServer.Applications
+@inject EPiServer.Applications.IApplicationResolver AppResolver
+
+@{
+    var startPageRef = (AppResolver.GetByContext() as IRoutableApplication)?.EntryPoint
+        ?? ContentReference.RootPage;
+}
+
+@* Use startPageRef wherever SiteDefinition.Current.StartPage was used *@
+@Html.MenuList(startPageRef, ItemTemplate)
+```
+
+Note: both `@using EPiServer.Applications` **and** the fully-qualified type in `@inject` are required because Razor view compilation resolves namespaces differently than C# files.
 
 See [`references/sites-and-routing.md`](references/sites-and-routing.md) for the full list.
 
@@ -268,7 +290,8 @@ If your project (or removed packages like `Episerver.Find`) used Newtonsoft.Json
 | Error | Fix |
 |---|---|
 | `IServiceLocator` not found | Replace with constructor injection |
-| `SiteDefinition.Current` | Inject `IApplicationResolver` |
+| `SiteDefinition.Current` | Inject `IApplicationResolver` (`using EPiServer.Applications`) |
+| `IApplicationResolver` / `IRoutableApplication` not found | Add `using EPiServer.Applications;` (or `@using EPiServer.Applications` in Razor views) |
 | `PageReference` ambiguous/obsolete | Replace with `ContentReference` |
 | `ContentArea.FilteredItems` | Use `ContentArea.Items` |
 | `ToHtmlString(IPrincipal)` | Use Tag Helpers / `Html.PropertyFor()` |
@@ -277,6 +300,8 @@ If your project (or removed packages like `Episerver.Find`) used Newtonsoft.Json
 | `ScheduledPlugInAttribute` | Use `ScheduledJobAttribute` |
 | `DynamicProperty` | Remove — no replacement |
 | `AddCmsCore()` namespace error | `using EPiServer.DependencyInjection;` |
+| `AddCmsAspNetIdentity()` not found | `using EPiServer.DependencyInjection;` (same namespace — add even if `AddCmsCore` already works) |
 | `IValidate<T>` not picked up | `services.AddCmsValidator<T>()` |
+| `'IContentRouteHelper' does not contain 'Page'` | Use `PageContext.Content` — in CMS 13, `PageContext` exposes `.Content` instead of `.Page`; no need to inject `IContentRouteHelper` separately in controller base classes |
 
 If an API isn't covered above, consult [`references/api-replacement-map.md`](references/api-replacement-map.md) for the complete CMS 12 → 13 type, method, event, and namespace mapping.
