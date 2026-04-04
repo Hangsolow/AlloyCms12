@@ -15,6 +15,7 @@ These are silent failures that won't produce obvious errors at the right moment 
 - **`SiteDefinition.Current.StartPage` doesn't throw — it returns an empty reference.** Code that checks `!ContentReference.IsNullOrEmpty(...)` on it may silently fall through with no site settings loaded.
 - **`IApplicationResolver` and `IRoutableApplication` live in `EPiServer.Applications`, not `EPiServer.Web`.** Every C# file using these types needs `using EPiServer.Applications;`. In Razor views, add both `@using EPiServer.Applications` and the fully-qualified inject directive (see Step 5). Missing this namespace causes a flood of "type or namespace not found" errors after migrating `SiteDefinition.Current`.
 - **`ContentArea.FilteredItems` is obsolete but still compiles.** It won't respect rendering filters in CMS 13. Use `ContentArea.Items` or the filter will be ignored with no error.
+- **`context.Locate.Advanced` inside `IConfigurableModule.Initialize()` fails.** `InitializationEngine.Locate` returns `IServiceLocator`, which is removed. Any call like `context.Locate.Advanced.GetInstance<T>()` will not compile. Replace with `context.Services.GetInstance<T>()`.
 - **The DI namespace change is a silent build failure.** If you have `using Microsoft.Extensions.DependencyInjection;` and call `AddCmsCore()`, the old extension method is gone — you get a confusing "no overload" error. Change to `using EPiServer.DependencyInjection;`.
 
 ## Migration workflow
@@ -79,6 +80,41 @@ Affected: `AddCmsCore()`, `AddCmsData()`, `AddCmsFramework()`, `AddTinyMce()`, `
 ### Step 4 — Remove service locator usages
 
 Replace constructor injection of removed types (`IServiceLocator`, `ServiceLocationHelper`, etc.) with standard constructor injection from `Microsoft.Extensions.DependencyInjection`. See [`references/framework-and-platform.md`](references/framework-and-platform.md#removed-service-locator-types).
+
+#### `IConfigurableModule.Initialize` — `context.Locate.Advanced`
+
+Inside `Initialize()` / `Uninitialize()` the old pattern accessed services via the engine context:
+
+```csharp
+// Before — context.Locate returns IServiceLocator (removed)
+var events = context.Locate.Advanced.GetInstance<ITemplateResolverEvents>();
+
+// After — static shim is still available in CMS 13
+var events = ServiceLocator.Current.GetInstance<ITemplateResolverEvents>();
+```
+
+Also remove any `[ModuleDependency(typeof(InitializationModule))]` on these classes — `InitializationModule` no longer exists.
+
+#### Razor page base classes
+
+Razor page base classes (inheriting from `RazorPage<TModel>`) don't support constructor injection. The old pattern used `ServiceLocator.Current.GetInstance<T>()` in the parameterless constructor. Replace with `Context.RequestServices.GetRequiredService<T>()`, using the `HttpContext Context` property available on `RazorPage<TModel>`:
+
+```csharp
+// Before — ServiceLocator in constructor
+public class MyPageBase : RazorPage<TModel>
+{
+    private readonly MyService _svc;
+    public MyPageBase() { _svc = ServiceLocator.Current.GetInstance<MyService>(); }
+    protected void UseService() => _svc.DoSomething();
+}
+
+// After — resolve on demand from the request service provider
+public class MyPageBase : RazorPage<TModel>
+{
+    protected void UseService()
+        => Context.RequestServices.GetRequiredService<MyService>().DoSomething();
+}
+```
 
 ---
 
@@ -242,7 +278,7 @@ private readonly IContentUrlGeneratorEvents _generatorEvents;
 _generatorEvents.GeneratingUrl += OnGeneratingUrl;
 ```
 
-See [`references/sites-and-routing.md`](references/sites-and-routing.md#routing-events-icontentRouteevents-removed).
+See [`references/sites-and-routing.md`](references/sites-and-routing.md).
 
 ---
 
@@ -271,7 +307,7 @@ public class MyJob : ScheduledJobBase { }
 
 ### Step 16 — Update UI URL references
 
-The CMS UI base path changed from `/EPiServer/` to `/Optimizely/`. Update bookmarks, scripts, webhooks, and any hard-coded URL references. See [`references/sites-and-routing.md`](references/sites-and-routing.md#ui-url-path-change-episerver--optimizely) for the full mapping.
+The CMS UI base path changed from `/EPiServer/` to `/Optimizely/`. Update bookmarks, scripts, webhooks, and any hard-coded URL references. See [`references/sites-and-routing.md`](references/sites-and-routing.md) for the full mapping.
 
 ---
 
@@ -302,6 +338,7 @@ If your project (or removed packages like `Episerver.Find`) used Newtonsoft.Json
 | `AddCmsCore()` namespace error | `using EPiServer.DependencyInjection;` |
 | `AddCmsAspNetIdentity()` not found | `using EPiServer.DependencyInjection;` (same namespace — add even if `AddCmsCore` already works) |
 | `IValidate<T>` not picked up | `services.AddCmsValidator<T>()` |
+| `context.Locate` / `context.Locate.Advanced.GetInstance<T>()` fails | `IServiceLocator` is removed; replace with `ServiceLocator.Current.GetInstance<T>()` |
 | `'IContentRouteHelper' does not contain 'Page'` | Use `PageContext.Content` — in CMS 13, `PageContext` exposes `.Content` instead of `.Page`; no need to inject `IContentRouteHelper` separately in controller base classes |
 
 If an API isn't covered above, consult [`references/api-replacement-map.md`](references/api-replacement-map.md) for the complete CMS 12 → 13 type, method, event, and namespace mapping.
