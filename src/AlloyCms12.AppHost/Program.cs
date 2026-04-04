@@ -1,8 +1,11 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
+var sqlPassword = builder.AddParameter("sql-password", secret: true);
+
 var sql = builder.AddSqlServer("sql")
+.WithPassword(sqlPassword)
 .WithLifetime(ContainerLifetime.Persistent)
-.WithDataVolume();
+.WithDataBindMount("obj/sql-data");
 
 var episerverDb = sql.AddDatabase("EPiServerDB");
 
