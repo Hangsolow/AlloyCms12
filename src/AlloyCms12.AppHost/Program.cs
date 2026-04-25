@@ -1,6 +1,17 @@
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Text.Json;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration.UserSecrets;
+
 var builder = DistributedApplication.CreateBuilder(args);
 
-var sqlPassword = builder.AddParameter("sql-password", secret: true);
+var sqlPasswordDefault = new GenerateParameterDefault()
+{
+	MinLength = 32,
+};
+
+var sqlPassword = builder.AddParameter("sql-password", sqlPasswordDefault, secret: true, persist: true);
 
 var sql = builder.AddSqlServer("sql")
 .WithPassword(sqlPassword)
