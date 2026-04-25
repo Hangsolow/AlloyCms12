@@ -1,0 +1,11 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/src/">
+    <Project Path="src/AlloyCms12/AlloyCms12.csproj" />
+    <Project Path="src/AlloyCms12.AppHost/AlloyCms12.AppHost.csproj" />
+  </Folder>
+</Solution>
