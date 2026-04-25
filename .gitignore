@@ -1,7 +1,10 @@
-App_Data/
+src/AlloyCms12/App_Data/*
+!src/AlloyCms12/App_Data/DefaultSiteContent.episerverdata
+src/AlloyCms12/App_Data/blobs/
 node_modules/
 artifacts/
-
+.playwright-cli/
+.playwright/*.png
 # Visual Studio files
 *.user
 *.lock.json
